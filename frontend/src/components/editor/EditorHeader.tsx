@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useWorkflowStore } from '../../store/useWorkflowStore';
-import { Play, RotateCcw, RotateCw, LayoutGrid, Check, AlertCircle } from 'lucide-react';
+import { Play, RotateCcw, RotateCw, LayoutGrid, Download, Upload } from 'lucide-react';
 
 export const EditorHeader: React.FC = () => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     workflow,
     saveStatus,
@@ -14,7 +15,26 @@ export const EditorHeader: React.FC = () => {
     executionStatus,
     saveToBackend,
     updateWorkflowTitle,
+    exportWorkflow,
+    importWorkflow,
   } = useWorkflowStore();
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = event => {
+      const content = event.target?.result as string;
+      if (content) {
+        const ok = importWorkflow(content);
+        if (!ok) {
+          alert('Ошибка при импорте воркфлоу: неверный JSON');
+        }
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const isRunning = executionStatus === 'running';
 
@@ -87,6 +107,33 @@ export const EditorHeader: React.FC = () => {
           <LayoutGrid className="w-3.5 h-3.5" />
           Auto-layout
         </button>
+
+        {/* Export JSON */}
+        <button
+          onClick={exportWorkflow}
+          title="Экспортировать воркфлоу в JSON"
+          className="flow-btn-secondary text-[13px] py-1.5 px-3 flex items-center gap-1.5"
+        >
+          <Download className="w-3.5 h-3.5 text-[#3DDC97]" />
+          Export
+        </button>
+
+        {/* Import JSON */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          title="Импортировать воркфлоу из JSON"
+          className="flow-btn-secondary text-[13px] py-1.5 px-3 flex items-center gap-1.5"
+        >
+          <Upload className="w-3.5 h-3.5 text-[#B6A5FF]" />
+          Import
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleFileChange}
+          className="hidden"
+        />
 
         <button
           onClick={runWorkflow}

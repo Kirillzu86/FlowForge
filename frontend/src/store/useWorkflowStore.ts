@@ -47,6 +47,8 @@ interface WorkflowState {
   runWorkflow: () => Promise<void>;
   validateCycle: () => Promise<boolean>;
   saveToBackend: () => Promise<void>;
+  exportWorkflow: () => void;
+  importWorkflow: (jsonString: string) => boolean;
 }
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
@@ -346,6 +348,49 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     } catch (err) {
       console.error('Failed to save workflow', err);
       set({ saveStatus: 'saved' });
+    }
+  },
+
+  exportWorkflow: () => {
+    const { workflow, nodes, edges } = get();
+    const data = {
+      title: workflow?.title || 'workflow',
+      description: workflow?.description || '',
+      version: (workflow?.version || 1) + 1,
+      exported_at: new Date().toISOString(),
+      nodes,
+      edges,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(workflow?.title || 'workflow').replace(/[\s/\\?%*:|"<>]/g, '_')}.flow.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  importWorkflow: (jsonString: string) => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+        throw new Error('Некорректный формат: должны быть массивы nodes и edges');
+      }
+      const { past, nodes, edges, workflow } = get();
+      set({
+        past: [...past.slice(-20), { nodes, edges }],
+        future: [],
+        nodes: parsed.nodes,
+        edges: parsed.edges,
+        workflow: workflow ? { ...workflow, title: parsed.title || workflow.title } : null,
+        saveStatus: 'unsaved',
+      });
+      get().validateCycle();
+      debouncedSave(get);
+      return true;
+    } catch (err) {
+      console.error('Import workflow error:', err);
+      return false;
     }
   },
 
