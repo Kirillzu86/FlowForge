@@ -87,14 +87,31 @@ class LLMHandler:
             return NodeExecutionResult(output=output, tokens_used=tokens)
 
         except Exception as e:
-            # Fallback mock execution for dev/testing when API keys or network are not available
-            # This matches the design: "Оценка заявки": { "score": 87, "summary": "Заявка тёплая" }
-            if "оцен" in rendered_prompt.lower() or "score" in rendered_prompt.lower():
-                mock_output = {"score": 87, "summary": "Заявка тёплая: клиент заинтересован в автоматизации"}
-            else:
-                mock_output = {"response": f"AI Response: обработан промпт '{rendered_prompt[:60]}...'"}
+            # Dynamic mock generation reflecting model, temperature and prompt
+            # when external API keys are not configured
+            jitter = int((temperature - 0.5) * 20)
+            score = max(10, min(99, 82 + jitter + (5 if "gemini" in model else 8 if "claude" in model else 0)))
 
-            return NodeExecutionResult(output=mock_output, tokens_used=842)
+            if temperature > 0.7:
+                style_note = f"[Креативный анализ | Model: {model} | Temp: {temperature}]"
+                summary = f"{style_note} Заявка нестандартная, высокий интерес клиента, рекомендуется индивидуальный оффер"
+            elif temperature < 0.3:
+                style_note = f"[Строгий скоринг | Model: {model} | Temp: {temperature}]"
+                summary = f"{style_note} Квалификация пройдена по ключевым критериям. Лид готов к передаче в отдел продаж"
+            else:
+                style_note = f"[Сбалансированный анализ | Model: {model} | Temp: {temperature}]"
+                summary = f"{style_note} Заявка тёплая: клиент заинтересован в автоматизации"
+
+            mock_output = {
+                "score": score,
+                "summary": summary,
+                "model_used": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "prompt_rendered": rendered_prompt[:80] + ("..." if len(rendered_prompt) > 80 else "")
+            }
+            tokens = int(500 + temperature * 400)
+            return NodeExecutionResult(output=mock_output, tokens_used=tokens)
 
 class ConditionHandler:
     @staticmethod

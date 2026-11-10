@@ -547,16 +547,48 @@ async function simulateLocalRun(get: () => WorkflowState, set: (fn: any) => void
     // mark completed or skipped
     const isFalseBranch = node.type === 'code' && node.position.y > 100;
     const status = isFalseBranch ? 'skipped' : 'success';
-    const mockOutput =
-      node.type === 'llm'
-        ? { score: 87, summary: 'Заявка тёплая' }
-        : node.type === 'condition'
-        ? { result: true, active_handle: 'true' }
-        : { status: 'OK' };
+    
+    // Dynamic output based on node settings (model, temperature, prompt)
+    let mockOutput: any = { status: 'OK' };
+    let executionTime = 15;
+    let tokensUsed = 0;
+
+    if (node.type === 'llm') {
+      const model = node.data.model || 'gpt-4o';
+      const temp = node.data.temperature ?? 0.2;
+      const prompt = node.data.prompt || '';
+      
+      // Calculate realistic variation based on temperature & model
+      const baseScore = 80;
+      const jitter = Math.round((temp - 0.5) * 20); // higher temp = more variation
+      const finalScore = Math.max(10, Math.min(99, baseScore + jitter + (model.includes('gemini') ? 5 : model.includes('claude') ? 8 : 2)));
+      
+      const summaryText = temp > 0.7 
+        ? `[Креативный анализ, t=${temp}] ${model}: Заявка нестандартная, высокий интерес клиента, рекомендуется индивидуальный оффер`
+        : temp < 0.3 
+        ? `[Строгий скоринг, t=${temp}] ${model}: Квалификация пройдена по ключевым критериям. Лид готов к передаче в отдел продаж`
+        : `[Стандартный скоринг, t=${temp}] ${model}: Заявка тёплая, бюджет подтверждён, требуется демо`;
+
+      mockOutput = {
+        score: finalScore,
+        summary: summaryText,
+        model_used: model,
+        temperature: temp,
+        evaluated_prompt_preview: prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')
+      };
+      tokensUsed = Math.round(500 + temp * 400);
+      executionTime = model.includes('gemini') ? 420 : model.includes('claude') ? 950 : 780;
+    } else if (node.type === 'condition') {
+      // Look up previous LLM score
+      const llmNode = nodes.find(n => n.type === 'llm');
+      const score = (llmNode?.data?.output as any)?.score ?? 87;
+      const isPassed = score >= 80;
+      mockOutput = { result: isPassed, active_handle: isPassed ? 'true' : 'false', evaluated_expression: `score (${score}) >= 80` };
+    }
 
     set((s: WorkflowState) => ({
       nodes: s.nodes.map(n =>
-        n.id === node.id ? { ...n, data: { ...n.data, status: status as any, output: mockOutput } } : n
+        n.id === node.id ? { ...n, data: { ...n.data, status: status as any, output: mockOutput, tokens_used: tokensUsed, execution_time_ms: executionTime } } : n
       ),
       executionLogs: [
         ...s.executionLogs.filter(l => l.node_id !== node.id),
@@ -566,10 +598,10 @@ async function simulateLocalRun(get: () => WorkflowState, set: (fn: any) => void
           node_type: node.type || '',
           node_title: node.data.title || node.id,
           status: status === 'success' ? 'SUCCESS' : 'SKIPPED',
-          input_payload: {},
+          input_payload: node.type === 'llm' ? { model: node.data.model, temperature: node.data.temperature, prompt: node.data.prompt } : {},
           output_payload: mockOutput,
-          execution_time_ms: node.type === 'llm' ? 842 : 15,
-          tokens_used: node.type === 'llm' ? 842 : 0,
+          execution_time_ms: executionTime,
+          tokens_used: tokensUsed,
           error_trace: null,
           started_at: new Date().toISOString(),
           finished_at: new Date().toISOString(),
