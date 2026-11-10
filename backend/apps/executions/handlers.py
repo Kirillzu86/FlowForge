@@ -41,22 +41,29 @@ class LLMHandler:
         temperature = float(node_data.get("temperature", 0.2))
         max_tokens = int(node_data.get("max_tokens", 1024))
 
-        # Try real LiteLLM if available and credentials configured
-        # Fast-path: skip LLM call entirely if no API keys are set
+        # Check environment and saved credentials from database
         import os
         api_base = None
         if model.startswith("ollama") or "ollama" in model.lower():
             api_base = os.environ.get('OLLAMA_BASE_URL',
                        getattr(settings, 'OLLAMA_BASE_URL', ''))
 
-        has_key = bool(
-            os.environ.get('OPENAI_API_KEY') or
-            os.environ.get('ANTHROPIC_API_KEY') or
-            os.environ.get('GEMINI_API_KEY') or
-            os.environ.get('DEEPSEEK_API_KEY') or
-            getattr(settings, 'OPENAI_API_KEY', '') or
-            api_base
-        )
+        # Fetch decrypted API keys from Credential model if present
+        db_keys = {}
+        try:
+            from apps.credentials.models import Credential
+            for c in Credential.objects.all():
+                secret = c.get_secret()
+                if secret and not secret.startswith('sk-proj-99a8b7c6') and not secret.startswith('sk-ant-api03') and not secret.startswith('AIzaSyD-1234'):
+                    db_keys[c.provider.upper()] = secret
+        except Exception:
+            pass
+
+        openai_key = os.environ.get('OPENAI_API_KEY') or getattr(settings, 'OPENAI_API_KEY', '') or db_keys.get('OPENAI')
+        anthropic_key = os.environ.get('ANTHROPIC_API_KEY') or getattr(settings, 'ANTHROPIC_API_KEY', '') or db_keys.get('ANTHROPIC')
+        gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', '') or db_keys.get('GEMINI')
+
+        has_key = bool(openai_key or anthropic_key or gemini_key or os.environ.get('DEEPSEEK_API_KEY') or api_base)
 
         try:
             if not has_key:
@@ -65,13 +72,23 @@ class LLMHandler:
             import litellm
             messages = [{"role": "user", "content": rendered_prompt}]
 
+            # Pass resolved api key to completion
+            kwargs = {}
+            if "gpt" in model and openai_key:
+                kwargs['api_key'] = openai_key
+            elif "claude" in model and anthropic_key:
+                kwargs['api_key'] = anthropic_key
+            elif "gemini" in model and gemini_key:
+                kwargs['api_key'] = gemini_key
+
             response = litellm.completion(
                 model=model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 api_base=api_base or None,
-                timeout=30
+                timeout=30,
+                **kwargs
             )
 
             content = response.choices[0].message.content
