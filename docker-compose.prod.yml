@@ -76,8 +76,8 @@ services:
   ollama:
     image: ollama/ollama:latest
     restart: always
-    ports:
-      - "11434:11434"
+    expose:
+      - "11434"
     volumes:
       - ollama_models:/root/.ollama
 
@@ -89,7 +89,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-3000}:80"
 
 volumes:
   postgres_data:
