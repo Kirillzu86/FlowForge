@@ -32,6 +32,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
+    image: flowforge-backend:latest
     restart: always
     depends_on:
       postgres:
@@ -55,15 +56,12 @@ services:
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 2 --timeout 120"
 
   celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+    image: flowforge-backend:latest
     restart: always
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - backend
+      - postgres
+      - redis
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
